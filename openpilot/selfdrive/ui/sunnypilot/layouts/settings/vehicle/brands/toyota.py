@@ -11,7 +11,7 @@ from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
 from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp
-from opendbc.car.toyota.values import ToyotaFlags
+from opendbc.car.toyota.values import CAR, ToyotaFlags
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
 
 
@@ -21,6 +21,8 @@ BSM_UNAVAILABLE = tr_noop("Enhanced Blind Spot Monitoring requires a TSS2 Toyota
 BSM_STOCK_LONG_UNAVAILABLE = tr_noop("Enhanced Blind Spot Monitoring is not available while Enforce Factory Longitudinal Control is enabled.")
 BSM_REQUIRED = tr_noop("This vehicle does not report blind spot status over the standard CAN signals. " +
                         "Enhanced Blind Spot Monitoring is required for blind spot detection.")
+ANGLE_STEERING_UNAVAILABLE = tr_noop("LTA Angle Steering is only available on the Toyota Prius/Prime 2021-22 (TSS2).")
+ANGLE_STEERING_HIGH_OUTPUT_UNAVAILABLE = tr_noop("LTA Angle Steering must be enabled to use high-output mode.")
 
 DESCRIPTIONS = {
   'enforce_stock_longitudinal': tr_noop(
@@ -33,6 +35,15 @@ DESCRIPTIONS = {
   'enhanced_bsm': tr_noop(
     'sunnypilot will poll the blind spot monitor diagnostics directly from the radar. Use this on vehicles whose blind spot monitors ' +
     'do not report blind spot status over the standard CAN signals. This is an alpha feature. Use at your own risk.'
+  ),
+  'angle_steering': tr_noop(
+    'sunnypilot will command steering angle through Toyota Lane Tracing Assist (LTA) instead of steering torque. ' +
+    'This is an alpha feature. Use at your own risk.'
+  ),
+  'angle_steering_high_output': tr_noop(
+    'sunnypilot will use the wider angle envelope of an EPS patched for high-output mode, with up to 180 deg of target ' +
+    'angle, a 250 deg/s angle rate and a 3200 torque monitor. Requires patched EPS firmware, the stock EPS only accepts ' +
+    '94.9461 deg. This is an alpha feature. Use at your own risk.'
   )
 }
 
@@ -65,10 +76,28 @@ class ToyotaSettings(BrandSettings):
       enabled=lambda: not ui_state.engaged,
     )
 
+    self.angle_steering = toggle_item_sp(
+      lambda: tr("LTA Angle Steering (Alpha)"),
+      description=lambda: tr(DESCRIPTIONS["angle_steering"]),
+      initial_state=ui_state.params.get_bool("ToyotaAngleSteering"),
+      callback=self._on_enable_angle_steering,
+      enabled=lambda: not ui_state.engaged,
+    )
+
+    self.angle_steering_high_output = toggle_item_sp(
+      lambda: tr("LTA Angle Steering High-Output (Alpha)"),
+      description=lambda: tr(DESCRIPTIONS["angle_steering_high_output"]),
+      initial_state=ui_state.params.get_bool("ToyotaAngleSteeringHighOutput"),
+      callback=self._on_enable_angle_steering_high_output,
+      enabled=lambda: not ui_state.engaged,
+    )
+
     self.items = [
       self.enforce_stock_longitudinal,
       self.stop_and_go_hack,
       self.enhanced_bsm,
+      self.angle_steering,
+      self.angle_steering_high_output,
     ]
 
   def _on_enable_enforce_stock_longitudinal(self, state: bool):
@@ -132,6 +161,46 @@ class ToyotaSettings(BrandSettings):
       ui_state.params.put_bool("ToyotaEnhancedBsm", False)
       ui_state.params.put_bool("OnroadCycleRequested", True)
 
+  def _on_enable_angle_steering(self, state: bool):
+    if state:
+      def confirm_callback(result: int):
+        if result == DialogResult.CONFIRM:
+          ui_state.params.put_bool("ToyotaAngleSteering", True)
+          ui_state.params.put_bool("OnroadCycleRequested", True)
+        else:
+          self.angle_steering.action_item.set_state(False)
+
+      content = (f"<h1>{self.angle_steering.title}</h1><br>" +
+                 f"<p>{self.angle_steering.description}</p>")
+
+      dlg = ConfirmDialog(content, tr("Enable"), rich=True, callback=confirm_callback)
+      gui_app.push_widget(dlg)
+
+    else:
+      ui_state.params.put_bool("ToyotaAngleSteering", False)
+      ui_state.params.put_bool("ToyotaAngleSteeringHighOutput", False)
+      self.angle_steering_high_output.action_item.set_state(False)
+      ui_state.params.put_bool("OnroadCycleRequested", True)
+
+  def _on_enable_angle_steering_high_output(self, state: bool):
+    if state:
+      def confirm_callback(result: int):
+        if result == DialogResult.CONFIRM:
+          ui_state.params.put_bool("ToyotaAngleSteeringHighOutput", True)
+          ui_state.params.put_bool("OnroadCycleRequested", True)
+        else:
+          self.angle_steering_high_output.action_item.set_state(False)
+
+      content = (f"<h1>{self.angle_steering_high_output.title}</h1><br>" +
+                 f"<p>{self.angle_steering_high_output.description}</p>")
+
+      dlg = ConfirmDialog(content, tr("Enable"), rich=True, callback=confirm_callback)
+      gui_app.push_widget(dlg)
+
+    else:
+      ui_state.params.put_bool("ToyotaAngleSteeringHighOutput", False)
+      ui_state.params.put_bool("OnroadCycleRequested", True)
+
   def update_settings(self):
     if ui_state.CP is not None:
       longitudinal = ui_state.CP.openpilotLongitudinalControl
@@ -172,6 +241,34 @@ class ToyotaSettings(BrandSettings):
         self.enhanced_bsm.set_description(bsm_desc)
         if not bsm_available:
           self.enhanced_bsm.show_description(True)
+
+      # LTA angle steering is only wired up for the Prius TSS2 platform
+      angle_steering_supported = ui_state.CP.carFingerprint == CAR.TOYOTA_PRIUS_TSS2
+      self.angle_steering.action_item.set_enabled(angle_steering_supported and not ui_state.engaged)
+
+      angle_desc = tr(DESCRIPTIONS["angle_steering"])
+      if not angle_steering_supported:
+        self.angle_steering.action_item.set_state(False)
+        angle_desc = "<b>" + tr(ANGLE_STEERING_UNAVAILABLE) + "</b>\n\n" + angle_desc
+
+      if self.angle_steering.description != angle_desc:
+        self.angle_steering.set_description(angle_desc)
+        if not angle_steering_supported:
+          self.angle_steering.show_description(True)
+
+      # high-output mode is only meaningful on top of LTA angle steering
+      high_output_available = angle_steering_supported and self.angle_steering.action_item.get_state()
+      self.angle_steering_high_output.action_item.set_enabled(high_output_available and not ui_state.engaged)
+
+      high_output_desc = tr(DESCRIPTIONS["angle_steering_high_output"])
+      if not high_output_available:
+        self.angle_steering_high_output.action_item.set_state(False)
+        high_output_desc = "<b>" + tr(ANGLE_STEERING_HIGH_OUTPUT_UNAVAILABLE) + "</b>\n\n" + high_output_desc
+
+      if self.angle_steering_high_output.description != high_output_desc:
+        self.angle_steering_high_output.set_description(high_output_desc)
+        if not high_output_available:
+          self.angle_steering_high_output.show_description(True)
     else:
       self.stop_and_go_hack.action_item.set_enabled(False)
       new_desc = "<b>" + tr(ONROAD_ONLY_DESCRIPTION) + "</b>\n\n" + tr(DESCRIPTIONS["stop_and_go_hack"])
@@ -184,3 +281,9 @@ class ToyotaSettings(BrandSettings):
       if self.enhanced_bsm.description != bsm_desc:
         self.enhanced_bsm.set_description(bsm_desc)
         self.enhanced_bsm.show_description(True)
+
+      self.angle_steering_high_output.action_item.set_enabled(False)
+      high_output_desc = "<b>" + tr(ONROAD_ONLY_DESCRIPTION) + "</b>\n\n" + tr(DESCRIPTIONS["angle_steering_high_output"])
+      if self.angle_steering_high_output.description != high_output_desc:
+        self.angle_steering_high_output.set_description(high_output_desc)
+        self.angle_steering_high_output.show_description(True)

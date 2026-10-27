@@ -46,6 +46,7 @@ CAPABILITY_FIELDS = (
   "hyundai_alpha_long_available",
   "custom_model_active",
   "toyota_enhanced_bsm_available",
+  "toyota_angle_steering_available",
 )
 
 CAPABILITY_LABELS: dict[str, str] = {
@@ -70,6 +71,7 @@ CAPABILITY_LABELS: dict[str, str] = {
   "hyundai_alpha_long_available": "Hyundai Alpha Longitudinal available",
   "custom_model_active": "Custom model selected",
   "toyota_enhanced_bsm_available": "Toyota Enhanced BSM available",
+  "toyota_angle_steering_available": "Toyota LTA angle steering available",
 }
 
 # Explicit defaults for non-boolean capability fields
@@ -121,10 +123,12 @@ def _resolve_brand_capabilities(caps: dict, bundle_platform: str, CP) -> None:
       try:
         flags = TOYOTA_CAR[bundle_platform].config.flags
         caps["toyota_enhanced_bsm_available"] = bool(flags & ToyotaFlags.TSS2) and not bool(flags & ToyotaFlags.SECOC)
+        caps["toyota_angle_steering_available"] = bundle_platform == TOYOTA_CAR.TOYOTA_PRIUS_TSS2.value
       except KeyError:
         cloudlog.exception(f"capabilities: unknown toyota platform {bundle_platform!r}")
     elif CP is not None:
       caps["toyota_enhanced_bsm_available"] = bool(CP.flags & ToyotaFlags.TSS2) and not bool(CP.flags & ToyotaFlags.SECOC)
+      caps["toyota_angle_steering_available"] = CP.carFingerprint == TOYOTA_CAR.TOYOTA_PRIUS_TSS2
 
 
 def generate_capabilities(params: Params | None = None) -> dict:
