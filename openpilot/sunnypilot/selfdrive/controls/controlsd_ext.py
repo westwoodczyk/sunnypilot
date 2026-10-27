@@ -35,6 +35,12 @@ class ControlsExt(ModelStateBase):
     self.pm_services_ext = ['carControlSP']
 
   def initialize_lateral_control(self, lac, CI, dt):
+    # Angle and curvature cars must keep the controller that matches steerControlType: controlsd logs
+    # whatever lac_log this returns into the corresponding lateralControlState union field, so swapping in
+    # a torque controller (LateralTorqueState) raises a capnp type mismatch and kills controlsd on publish
+    if self.CP.steerControlType != structs.CarParams.SteerControlType.torque:
+      return lac
+
     enforce_torque_control = self.params.get_bool("EnforceTorqueControl")
     torque_versions = self.params.get("TorqueControlTune")
     if not enforce_torque_control:
