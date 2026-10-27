@@ -2378,15 +2378,10 @@
           "widget": "toggle",
           "needs_onroad_cycle": true,
           "title": "LTA Angle Steering (Alpha)",
-          "description": "sunnypilot will command steering angle through Toyota Lane Tracing Assist (LTA) instead of steering torque. Only available on the Toyota Prius/Prime 2021-22 (TSS2). This is an alpha feature. Use at your own risk.",
+          "description": "sunnypilot will command steering angle through Toyota Lane Tracing Assist (LTA) instead of steering torque. Intended for the Toyota Prius/Prime 2021-22 (TSS2). This is an alpha feature. Use at your own risk.",
           "enablement": [
             {
               "type": "not_engaged"
-            },
-            {
-              "type": "capability",
-              "field": "toyota_angle_steering_available",
-              "equals": true
             }
           ]
         },
@@ -2399,11 +2394,6 @@
           "enablement": [
             {
               "type": "not_engaged"
-            },
-            {
-              "type": "capability",
-              "field": "toyota_angle_steering_available",
-              "equals": true
             },
             {
               "type": "param",

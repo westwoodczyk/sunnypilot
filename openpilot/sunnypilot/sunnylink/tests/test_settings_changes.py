@@ -218,3 +218,17 @@ class TestNotEngagedReplacement(OpenpilotTestCase):
     rule_types = _flatten_rule_types(item.get("enablement"))
     assert "offroad_only" not in rule_types, f"{key} still uses offroad_only"
     assert "not_engaged" in rule_types, f"{key} missing not_engaged"
+
+
+class TestToyotaAngleSteeringNoVehicleGate(OpenpilotTestCase):
+  @parameterized.expand([
+    "ToyotaAngleSteering",
+    "ToyotaAngleSteeringHighOutput",
+  ], names=["key"])
+  def test_not_gated_on_vehicle_platform(self, schema, key):
+    """Angle steering is alpha: it must stay toggleable regardless of platform detection."""
+    item = _find_item(schema, key)
+    assert item is not None, f"{key} not found"
+    rules = (item.get("visibility") or []) + (item.get("enablement") or [])
+    assert not _references_capability_field(rules, "toyota_angle_steering_available"), f"{key} still gated on car platform"
+    assert not _references_capability_field(rules, "brand"), f"{key} still gated on brand"
